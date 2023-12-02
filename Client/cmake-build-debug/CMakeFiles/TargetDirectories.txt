@@ -1,0 +1,3 @@
+/home/mohamed/network/labs/HTTP-Client-Server/Client/cmake-build-debug/CMakeFiles/Client.dir
+/home/mohamed/network/labs/HTTP-Client-Server/Client/cmake-build-debug/CMakeFiles/edit_cache.dir
+/home/mohamed/network/labs/HTTP-Client-Server/Client/cmake-build-debug/CMakeFiles/rebuild_cache.dir
