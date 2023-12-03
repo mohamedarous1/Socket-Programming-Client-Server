@@ -1,8 +1,6 @@
 #include <iostream>
 #include <sys/socket.h>
 #include <cstdio>
-#include <stdlib.h>
-#include <string.h>
 #include <unistd.h>
 #include <sys/socket.h>
 #include <sys/types.h>
@@ -13,13 +11,28 @@
 
 using namespace std;
 
+void fast(){
+    ios_base::sync_with_stdio(0);
+    cin.tie(0);
+    cout.tie(0);
+}
+
 string get_header( string  filePath){
-    string buffer = "";
+    string buffer;
     buffer.append("GET /");
     buffer.append( filePath);
     buffer.append( " HTTP/1.1");
     buffer.append( "\r\n");
     return buffer;
+}
+
+vector<string> parser(string str) {
+    // parse given string into strings with delimiter " "
+    regex delimiter(" ");
+    sregex_token_iterator it(str.begin(), str.end(), delimiter, -1);
+    sregex_token_iterator end;
+    vector<string> header(it, end);
+    return header;
 }
 
 //char * post_header(char filePath[] , char hostName[]){
@@ -34,10 +47,10 @@ string get_header( string  filePath){
 //    return buffer;
 //}
 
-
-
-
 int main(int argc, char* argv[]) {
+
+    fast();
+
     int port_number = DAFULT_PORT;
     if(argc == 3){
         port_number = stoi(argv[2]);
@@ -69,16 +82,58 @@ int main(int argc, char* argv[]) {
     string s;
     while(true){
         getline(std::cin, s);
-        std::regex delimiter(" ");
-        std::sregex_token_iterator it(s.begin(), s.end(), delimiter, -1);
-        std::sregex_token_iterator end;
-        std::vector<std::string> command(it, end);
+        vector<string> command = parser(s);
 
         if(command[0] ==  "client_get" ){
             string send_header = get_header(command[1]);
-            //printf("%s\n" , send_header);
             send(clientSockFD, send_header.c_str(), strlen(send_header.c_str()), 0);
 
+            // handle receiving header
+            char receivedMsg[1024];
+            memset(receivedMsg, 0, sizeof(receivedMsg));
+            recv(clientSockFD, receivedMsg, 1024, 0);
+            string str(receivedMsg);
+//            cout << "received header.." << str.size() << " " << str;
+            vector<string> receivedHeader = parser(str);
+            for(auto x: receivedHeader) { cout << x << "\n"; }
+            //..
+            if(receivedHeader[1] != "200") continue;
+            int contentSize = stoi(receivedHeader[3]);
+//            cout << "contentsize: " << contentSize << '\n';
+
+
+            string tempcontent = "";
+//            cout << "in whil-1";
+            while (true) {
+//                cout << "in whil0";
+                int maxNBytes = 1024;
+                char receivedContent[maxNBytes];
+//                cout << "in whil1";
+                if (tempcontent.size() == contentSize) break;
+//                cout << "in whil2";
+                long valRead = read(clientSockFD, receivedContent, maxNBytes);
+
+                if (valRead <= 0) {
+                    cout << "File Completed";
+                    break;
+                }
+//                cout << "in whil3";
+                tempcontent.append(string(receivedContent));
+            }
+            printf("%s",tempcontent.c_str());
+//            cout << "tempcontent: " << tempcontent << '\n';
+
+
+        // handle got content.
+//            char receivedContent[contentSize];
+//            memset(receivedContent, 0, sizeof(receivedContent));
+////            cout << "before receive\n";
+//            recv(clientSockFD, receivedContent, contentSize, 0);
+////            cout << "after receive\n";
+//            string content(receivedContent);
+////            cout << "printed content-size: " << content.size() << '\n';
+////            cout << "received content :\n" << content << '\n';
+//            printf("%s", content.c_str());
         }
 
         //else if(strcmp(command[0] , "client_post" )==0){
