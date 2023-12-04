@@ -8,7 +8,7 @@
 #include <arpa/inet.h>
 #include<bits/stdc++.h>
 #define DEFAULT_PORT 80
-
+#define BUFFER_SIZE 1024
 using namespace std;
 typedef long long ll;
 typedef struct Arg Arg;
@@ -17,11 +17,57 @@ struct Arg {
 
 };
 
+unsigned char* readImage(const char* filePath) {
+    FILE *file = fopen(filePath, "rb");
+
+    if (!file) {
+        fprintf(stderr, "Error opening file\n");
+        return NULL;
+    }
+
+    // Seek to the end of the file to determine its size
+    fseek(file, 0, SEEK_END);
+    long imageSize = ftell(file);
+    fseek(file, 0, SEEK_SET);
+
+    // Allocate memory to store the image data
+    unsigned char *imageData = (unsigned char *)malloc(imageSize);
+
+    if (!imageData) {
+        fprintf(stderr, "Memory allocation error\n");
+        fclose(file);
+        return NULL;
+    }
+
+    // Read the entire file into memory
+    size_t bytesRead = fread(imageData, 1, imageSize, file);
+
+    if (bytesRead != imageSize) {
+        fprintf(stderr, "Error reading file\n");
+        free(imageData);
+        fclose(file);
+        return NULL;
+    }
+
+    // Close the file
+    fclose(file);
+
+    return imageData;
+}
+
 pair<bool, string> getNeededFile(string &fileName){
 
     // Open the file ** assuming that the given path started by "/"
+
     ifstream fileStream;
-    fileStream.open(fileName.substr(1, fileName.size() - 1));
+//    if(fileName.find(".jpg")){
+//
+//       unsigned char * s = readImage(fileName.substr(1, fileName.size() - 1).c_str());
+//        cout << string(reinterpret_cast<const char *>(s)) << endl;
+//        return {1 , string(reinterpret_cast<const char *>(s))};
+//    }else{
+        fileStream.open(fileName.substr(1, fileName.size() - 1));
+
 
     // Check if the file is open successfully
     if(!fileStream.is_open()) return {false, ""};
@@ -41,8 +87,11 @@ pair<bool, string> getNeededFile(string &fileName){
 void sendChuncks(int socket, string &s) {
     int maxNBytes = 500;
     const char *beginner = s.c_str();
-    for (int i = 0; i < s.length(); i += maxNBytes) {
-        send(socket, beginner + i,min(maxNBytes, (int)s.length() - i), 0);
+    int i=0;
+    while(i < s.length())
+    {
+        write(socket, beginner + i,min(maxNBytes, (int)s.length() - i+1));
+        i+=500;
     }
 }
 
@@ -50,9 +99,9 @@ void *connectionTransfer(void *arg){
     Arg arguments = *(Arg *) arg;
     while(true){
         // handle receiving header
-        char recievedMsg [1024];
+        char recievedMsg [BUFFER_SIZE];
         memset(recievedMsg, 0, sizeof(recievedMsg));
-        recv(arguments.socketFD, recievedMsg, 1024, 0);
+        recv(arguments.socketFD, recievedMsg, BUFFER_SIZE, 0);
         string str(recievedMsg);
         cout << "received header.." << str.size() << str <<" ";
 
@@ -69,26 +118,69 @@ void *connectionTransfer(void *arg){
         }
         if(header[0] == "GET") {
             pair<bool, string> contentStatus = getNeededFile(header[1]);
-
+            cout<<contentStatus.first<<endl;
             // handle header
             if(contentStatus.first){
                 string sent_header = "HTTP/1.1 200 OK\r\n";
                 sent_header.append("content-size: " + to_string(contentStatus.second.size()));
-                sent_header.append( " \r\n");
+                sent_header.append( " \\r\\n");
                 cout << "header in get in success " << sent_header << '\n';
-                 send(arguments.socketFD, sent_header.c_str(), strlen(sent_header.c_str()), 0);
+                write(arguments.socketFD, sent_header.c_str(), strlen(sent_header.c_str()) );
             } else {
-                string send_header = "HTTP/1.1 404 Not Found\r\n";
-                send(arguments.socketFD, send_header.c_str(), strlen(send_header.c_str()), 0);
+                string send_header = "HTTP/1.1 404 Not Found\\r\\n";
+                cout << "header in get in success " << send_header << '\n';
+                cout<<send_header.size()<<endl;
+                write(arguments.socketFD, send_header.c_str(), strlen(send_header.c_str()) );
+                cout<<"hello"<<endl;
                 continue;
             }
             cout << contentStatus.second << '\n';
-
+            //write(arguments.socketFD, contentStatus.second.c_str(), strlen(contentStatus.second.c_str()) );
+            // << contentStatus.second << '\n';
             // handle content
             sendChuncks(arguments.socketFD, contentStatus.second);
         }
         else if(header[0] == "POST"){
 
+
+
+            // needed to be updated
+            cout<<header.size()<<endl;
+            for(auto x : header){
+                cout<<x<<endl;
+            }
+            int contentSize = stoi(header[8]);
+            cout<<contentSize<<endl;
+
+
+
+            string tempcontent = "";
+
+            while (true) {
+
+                int maxNBytes = 1024;
+                char receivedContent[BUFFER_SIZE];
+                memset(receivedContent, 0, sizeof(receivedContent));
+                if(tempcontent.size() == contentSize){
+                    break;
+                }
+                ssize_t valRead = recv(arguments.socketFD, receivedContent, BUFFER_SIZE,0);
+
+                if (valRead <= 0) {
+                    cout << "File Completed";
+                    break;
+                }
+                tempcontent.append(string(receivedContent));
+                cout<<string(receivedContent).size()<<endl;
+
+                cout<<tempcontent.size()<<endl<<endl;
+                if(tempcontent.size() == contentSize){
+                    break;
+                }
+            }
+            cout<<"hello"<<endl;
+            ofstream f_stream(header[1].substr(1 , header[1].size()-1));
+            f_stream.write( tempcontent.c_str(), tempcontent.length());
         }
 
 //        printf("The received data: %s from id : %d \n", recievedMsg , arguments.socketFD);
@@ -175,14 +267,16 @@ int main(int argc, char* argv[]) {
 
 
         }
-
-
-        if (setsockopt (connectionServerSockFD, SOL_SOCKET, SO_SNDTIMEO, &timeout,
-                        sizeof timeout) < 0){
-
-            printf("setsockopt failed\n");
-
-        }
+//        struct timeval timeout2{};
+//        timeout.tv_sec = 1;
+//        timeout.tv_usec = 0;
+//
+//        if (setsockopt (connectionServerSockFD, SOL_SOCKET, SO_SNDTIMEO, &timeout2,
+//                        sizeof timeout2) < 0){
+//
+//            printf("setsockopt failed\n");
+//
+//        }
 
         pthread_create(&thread  , NULL , connectionTransfer  ,  (void *) &arg);
     }

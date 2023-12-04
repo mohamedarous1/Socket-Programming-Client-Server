@@ -1,3 +1,3 @@
-/home/abdelmotlb/al-Public/[2] university-content/[2] Networks/Socket-Programming-Client-Server/Server/cmake-build-debug/CMakeFiles/Server.dir
-/home/abdelmotlb/al-Public/[2] university-content/[2] Networks/Socket-Programming-Client-Server/Server/cmake-build-debug/CMakeFiles/edit_cache.dir
-/home/abdelmotlb/al-Public/[2] university-content/[2] Networks/Socket-Programming-Client-Server/Server/cmake-build-debug/CMakeFiles/rebuild_cache.dir
+/home/mohamed/network/labs/HTTP-Client-Server/Server/cmake-build-debug/CMakeFiles/Server.dir
+/home/mohamed/network/labs/HTTP-Client-Server/Server/cmake-build-debug/CMakeFiles/edit_cache.dir
+/home/mohamed/network/labs/HTTP-Client-Server/Server/cmake-build-debug/CMakeFiles/rebuild_cache.dir

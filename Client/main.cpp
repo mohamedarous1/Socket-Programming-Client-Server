@@ -8,7 +8,7 @@
 #include <arpa/inet.h>
 #include<bits/stdc++.h>
 #define DAFULT_PORT 80
-
+#define BUFFER_SIZE 1024
 using namespace std;
 
 void fast(){
@@ -35,17 +35,58 @@ vector<string> parser(string str) {
     return header;
 }
 
-//char * post_header(char filePath[] , char hostName[]){
-//    char *buffer = (char *) malloc(1024);
-//    strcpy(buffer, "POST /");
-//    strcpy(buffer, filePath);
-//    strcpy(buffer, "HTTP/1.1");
-//    strcat(buffer, "Host: ");
-//    strcat(buffer, hostName);
-//    strcat(buffer, "\r\n");
-//    strcat(buffer, "Connection: keep-alive\r\n");
-//    return buffer;
-//}
+string post_header(string filePath , string hostName){
+    string buffer;
+    buffer.append("POST /");
+    buffer.append( filePath);
+    buffer.append( " HTTP/1.1 ");
+    buffer.append( "Host: ");
+    buffer.append( hostName);
+    buffer.append( "\\r\\n ");
+    buffer.append( "Connection: keep-alive\\r\\n ");
+    return buffer;
+}
+
+pair<bool, string> getNeededFile(string &fileName){
+
+    // Open the file ** assuming that the given path started by "/"
+
+    ifstream fileStream;
+//    if(fileName.find(".jpg")){
+//
+//       unsigned char * s = readImage(fileName.substr(1, fileName.size() - 1).c_str());
+//        cout << string(reinterpret_cast<const char *>(s)) << endl;
+//        return {1 , string(reinterpret_cast<const char *>(s))};
+//    }else{
+    fileStream.open( fileName );
+
+
+    // Check if the file is open successfully
+    if(!fileStream.is_open()) return {false, ""};
+
+    // Read the entire content of the file into a string
+    stringstream buffer;
+    buffer << fileStream.rdbuf();
+    string fileContent = buffer.str();
+
+    // close the file
+    fileStream.close();
+
+    // return success
+    return {true, fileContent};
+}
+
+void sendChuncks(int socket, string &s) {
+    int maxNBytes = 500;
+    const char *beginner = s.c_str();
+    int i=0;
+    while(i < s.length())
+    {
+        write(socket, beginner + i,min(maxNBytes, (int)s.length() - i+1));
+        i+=500;
+    }
+}
+
 
 int main(int argc, char* argv[]) {
 
@@ -79,9 +120,14 @@ int main(int argc, char* argv[]) {
         printf("Failed to make a connection.\n");
         exit(1);
     }
-    string s;
-    while(true){
-        getline(std::cin, s);
+    string req;
+    ifstream f;
+    vector<string> requests;
+    f.open("request.txt");
+    while(getline(f, req))
+        requests.push_back(req);
+    cout<<requests.size()<<endl;
+    for(auto s : requests){
         vector<string> command = parser(s);
 
         if(command[0] ==  "client_get" ){
@@ -89,42 +135,80 @@ int main(int argc, char* argv[]) {
             send(clientSockFD, send_header.c_str(), strlen(send_header.c_str()), 0);
 
             // handle receiving header
-            char receivedMsg[1024];
+            char receivedMsg[BUFFER_SIZE];
             memset(receivedMsg, 0, sizeof(receivedMsg));
-            recv(clientSockFD, receivedMsg, 1024, 0);
+            ssize_t numBytesRcvd = recv(clientSockFD, receivedMsg, BUFFER_SIZE,0);
+            if (numBytesRcvd < 0){
+                cout<<"recv() failed"<<endl;
+            }
+
             string str(receivedMsg);
-//            cout << "received header.." << str.size() << " " << str;
+            cout << "received header.." << str <<endl;
             vector<string> receivedHeader = parser(str);
-            for(auto x: receivedHeader) { cout << x << "\n"; }
+            //for(auto x: receivedHeader) { cout << x << "\n"; }
             //..
             if(receivedHeader[1] != "200") continue;
             int contentSize = stoi(receivedHeader[3]);
-//            cout << "contentsize: " << contentSize << '\n';
+            cout<<contentSize<<endl;
 
 
             string tempcontent = "";
-//            cout << "in whil-1";
+
             while (true) {
-//                cout << "in whil0";
+
                 int maxNBytes = 1024;
-                char receivedContent[maxNBytes];
-//                cout << "in whil1";
-                if (tempcontent.size() == contentSize) break;
-//                cout << "in whil2";
-                long valRead = read(clientSockFD, receivedContent, maxNBytes);
+                char receivedContent[BUFFER_SIZE];
+                memset(receivedContent, 0, sizeof(receivedContent));
+                if(tempcontent.size() == contentSize){
+                    break;
+                }
+                ssize_t valRead = recv(clientSockFD, receivedContent, BUFFER_SIZE,0);
 
                 if (valRead <= 0) {
                     cout << "File Completed";
                     break;
                 }
-//                cout << "in whil3";
                 tempcontent.append(string(receivedContent));
+                cout<<string(receivedContent).size()<<endl;
+                //cout<<tempcontent<<endl<<endl<<endl;
+                cout<<tempcontent.size()<<endl<<endl;
+                if(tempcontent.size() == contentSize){
+                    break;
+                }
             }
-            printf("%s",tempcontent.c_str());
-//            cout << "tempcontent: " << tempcontent << '\n';
+            cout<<"hello"<<endl;
+            ofstream f_stream(command[1]);
+            f_stream.write(tempcontent.c_str(), tempcontent.length());
 
 
-        // handle got content.
+        }
+        else if(command[0] ==  "client_post"){
+
+            // handle the header of post http request
+            string send_header = post_header(command[1] , command[2]);
+            cout<<"hellooooo"<<endl;
+            pair<bool, string> contentStatus = getNeededFile(command[1]);
+            //send(clientSockFD, send_header.c_str(), strlen(send_header.c_str()), 0);
+            if(contentStatus.first){
+
+                send_header.append("content-size: " + to_string(contentStatus.second.size()));
+                send_header.append( " \\r\\n");
+                cout << "header in get in success " << send_header << '\n';
+                write(clientSockFD, send_header.c_str(), strlen(send_header.c_str()) );
+            } else {
+                cout << "file not founded"  << '\n';
+                continue;
+            }
+            // send the content of the file
+            cout << contentStatus.second << '\n';
+            sendChuncks(clientSockFD, contentStatus.second);
+        }
+
+    }
+    return 0;
+}
+
+    // handle got content.
 //            char receivedContent[contentSize];
 //            memset(receivedContent, 0, sizeof(receivedContent));
 ////            cout << "before receive\n";
@@ -134,18 +218,3 @@ int main(int argc, char* argv[]) {
 ////            cout << "printed content-size: " << content.size() << '\n';
 ////            cout << "received content :\n" << content << '\n';
 //            printf("%s", content.c_str());
-        }
-
-        //else if(strcmp(command[0] , "client_post" )==0){
-//            char * temp ;
-//            strcpy(temp , command[1]);
-//            char * temp2 ;
-//            strcpy(temp2 , command[2]);
-//            char *send_header = post_header(temp , temp2);
-//            send(clientSockFD, send_header, strlen(send_header), 0);
-//        }
-        //send(clientSockFD, s, strlen(s), 0);
-
-    }
-    return 0;
-}
