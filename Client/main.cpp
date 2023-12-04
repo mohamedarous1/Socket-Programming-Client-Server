@@ -157,19 +157,19 @@ int main(int argc, char* argv[]) {
             while (true) {
 
                 int maxNBytes = 1024;
-                char receivedContent[BUFFER_SIZE];
+                char receivedContent[maxNBytes];
                 memset(receivedContent, 0, sizeof(receivedContent));
                 if(tempcontent.size() == contentSize){
                     break;
                 }
-                ssize_t valRead = recv(clientSockFD, receivedContent, BUFFER_SIZE,0);
+                ssize_t valRead = read(clientSockFD, receivedContent, maxNBytes);
 
                 if (valRead <= 0) {
                     cout << "File Completed";
                     break;
                 }
                 tempcontent.append(string(receivedContent));
-                cout<<string(receivedContent).size()<<endl;
+//                cout<<string(receivedContent).size()<<endl;
                 //cout<<tempcontent<<endl<<endl<<endl;
                 cout<<tempcontent.size()<<endl<<endl;
                 if(tempcontent.size() == contentSize){
@@ -207,7 +207,10 @@ int main(int argc, char* argv[]) {
     }
     return 0;
 }
-
+/*
+ * client_post readed.txt mohamed
+ * client_post index.html abdoo
+ * */
     // handle got content.
 //            char receivedContent[contentSize];
 //            memset(receivedContent, 0, sizeof(receivedContent));

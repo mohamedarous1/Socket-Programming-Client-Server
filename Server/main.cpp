@@ -17,57 +17,60 @@ struct Arg {
 
 };
 
-unsigned char* readImage(const char* filePath) {
+pair<bool, string> readImage(const char* filePath) {
+
+    // needed without first "/"
     FILE *file = fopen(filePath, "rb");
 
     if (!file) {
         fprintf(stderr, "Error opening file\n");
-        return NULL;
+        return {0, ""};
     }
 
     // Seek to the end of the file to determine its size
     fseek(file, 0, SEEK_END);
-    long imageSize = ftell(file);
+    int imageSize = ftell(file);
     fseek(file, 0, SEEK_SET);
 
-    // Allocate memory to store the image data
-    unsigned char *imageData = (unsigned char *)malloc(imageSize);
+    cout << imageSize << " is image size.\n";
 
-    if (!imageData) {
-        fprintf(stderr, "Memory allocation error\n");
-        fclose(file);
-        return NULL;
+    // Allocate memory to store the image data
+    char imageData[imageSize];
+
+    /**/
+    int nBytes = 0;
+    while(true) {
+        if(nBytes == imageSize) break;
+        imageData[nBytes] = 0;
+        if(fread(&imageData[nBytes], sizeof(char), 1, file) != 1) continue;
+        nBytes++;
     }
+
+    /**/
 
     // Read the entire file into memory
-    size_t bytesRead = fread(imageData, 1, imageSize, file);
+//    size_t bytesRead = fread(imageData, 1, imageSize, file);
+//    cout << bytesRead<< " bytesRead\n";
+    size_t length = sizeof(imageData) / sizeof(char);
+    string imgDataStr(imageData, length);
 
-    if (bytesRead != imageSize) {
-        fprintf(stderr, "Error reading file\n");
-        free(imageData);
-        fclose(file);
-        return NULL;
-    }
+//    cout << imgDataStr << " " << imgDataStr.size() << '\n';
 
     // Close the file
     fclose(file);
 
-    return imageData;
+    return {1, imgDataStr};
 }
 
 pair<bool, string> getNeededFile(string &fileName){
 
     // Open the file ** assuming that the given path started by "/"
-
     ifstream fileStream;
-//    if(fileName.find(".jpg")){
-//
-//       unsigned char * s = readImage(fileName.substr(1, fileName.size() - 1).c_str());
-//        cout << string(reinterpret_cast<const char *>(s)) << endl;
-//        return {1 , string(reinterpret_cast<const char *>(s))};
-//    }else{
+    if(fileName.find(".png")){
+        return readImage(fileName.substr(1, fileName.size() - 1).c_str());
+    }else {
         fileStream.open(fileName.substr(1, fileName.size() - 1));
-
+    }
 
     // Check if the file is open successfully
     if(!fileStream.is_open()) return {false, ""};
@@ -85,13 +88,14 @@ pair<bool, string> getNeededFile(string &fileName){
 }
 
 void sendChuncks(int socket, string &s) {
-    int maxNBytes = 500;
+    int maxNBytes = 64;
     const char *beginner = s.c_str();
     int i=0;
     while(i < s.length())
     {
-        write(socket, beginner + i,min(maxNBytes, (int)s.length() - i+1));
-        i+=500;
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        send(socket, beginner + i,min(maxNBytes, (int)s.length() - i), 0);
+        i += maxNBytes;
     }
 }
 
@@ -134,15 +138,13 @@ void *connectionTransfer(void *arg){
                 cout<<"hello"<<endl;
                 continue;
             }
-            cout << contentStatus.second << '\n';
+//            cout << contentStatus.second << '\n';
             //write(arguments.socketFD, contentStatus.second.c_str(), strlen(contentStatus.second.c_str()) );
             // << contentStatus.second << '\n';
             // handle content
             sendChuncks(arguments.socketFD, contentStatus.second);
         }
         else if(header[0] == "POST"){
-
-
 
             // needed to be updated
             cout<<header.size()<<endl;
