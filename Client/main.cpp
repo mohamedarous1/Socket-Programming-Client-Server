@@ -17,12 +17,15 @@ void fast(){
     cout.tie(0);
 }
 
-string get_header(string  filePath){
+string get_header(string filePath, string hostName){
     string buffer;
     buffer.append("GET /");
     buffer.append( filePath);
-    buffer.append( " HTTP/1.1");
-    buffer.append( "\r\n");
+    buffer.append( " HTTP/1.1 ");
+    /* code here is changed */
+    buffer.append( "Host: ");
+    buffer.append(hostName);
+    buffer.append( "\\r\\n");
     return buffer;
 }
 
@@ -35,7 +38,7 @@ vector<string> parser(string str) {
     return header;
 }
 
-string post_header(string filePath , string hostName){
+string post_header(string &filePath , string &hostName){
     string buffer;
     buffer.append("POST /");
     buffer.append( filePath);
@@ -109,7 +112,7 @@ int main(int argc, char* argv[]) {
         vector<string> command = parser(s);
 
         if(command[0] ==  "client_get"){
-            string send_header = get_header(command[1]);
+            string send_header = get_header(command[1], command[2]);
             send(clientSockFD, send_header.c_str(), strlen(send_header.c_str()), 0);
 
             // handle receiving header
@@ -174,5 +177,6 @@ int main(int argc, char* argv[]) {
         }
 
     }
+//     while(true) {}
     return 0;
 }
