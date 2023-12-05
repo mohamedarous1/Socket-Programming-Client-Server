@@ -14,89 +14,20 @@ typedef long long ll;
 typedef struct Arg Arg;
 struct Arg {
     int socketFD;
-
 };
 
-pair<bool, string> readImage(const char* filePath) {
+struct timeval timeout{};
+int nOfActiveConnections = 0;
 
-    // needed without first "/"
-    FILE *file = fopen(filePath, "rb");
-
-    if (!file) {
-        fprintf(stderr, "Error opening file\n");
-        return {0, ""};
-    }
-
-    // Seek to the end of the file to determine its size
-    fseek(file, 0, SEEK_END);
-    int imageSize = ftell(file);
-    fseek(file, 0, SEEK_SET);
-
-    cout << imageSize << " is image size.\n";
-
-    // Allocate memory to store the image data
-    char imageData[imageSize];
-
-    /**/
-    int nBytes = 0;
-    while(true) {
-        if(nBytes == imageSize) break;
-        imageData[nBytes] = 0;
-        if(fread(&imageData[nBytes], sizeof(char), 1, file) != 1) continue;
-        nBytes++;
-    }
-
-    /**/
-
-    // Read the entire file into memory
-//    size_t bytesRead = fread(imageData, 1, imageSize, file);
-//    cout << bytesRead<< " bytesRead\n";
-    size_t length = sizeof(imageData) / sizeof(char);
-    string imgDataStr(imageData, length);
-
-//    cout << imgDataStr << " " << imgDataStr.size() << '\n';
-
-    // Close the file
-    fclose(file);
-
-    return {1, imgDataStr};
-}
-
-pair<bool, string> getNeededFile(string &fileName){
-
-    // Open the file ** assuming that the given path started by "/"
-    ifstream fileStream;
-    if(fileName.find(".png")){
-        return readImage(fileName.substr(1, fileName.size() - 1).c_str());
-    }else {
-        fileStream.open(fileName.substr(1, fileName.size() - 1));
-    }
-
-    // Check if the file is open successfully
-    if(!fileStream.is_open()) return {false, ""};
-
-    // Read the entire content of the file into a string
-    stringstream buffer;
-    buffer << fileStream.rdbuf();
-    string fileContent = buffer.str();
-
-    // close the file
-    fileStream.close();
-
-    // return success
-    return {true, fileContent};
-}
-
-void sendChuncks(int socket, string &s) {
-    int maxNBytes = 64;
-    const char *beginner = s.c_str();
-    int i=0;
-    while(i < s.length())
-    {
-        std::this_thread::sleep_for(std::chrono::milliseconds(50));
-        send(socket, beginner + i,min(maxNBytes, (int)s.length() - i), 0);
-        i += maxNBytes;
-    }
+pair<bool, string> fileContent(ifstream &file) {
+    if(!file.is_open()) return {0, ""};
+    ostringstream fileContentStream;
+    file.seekg(0, ios::beg);
+    // Read the entire file into the stream
+    fileContentStream << file.rdbuf();
+    // Get the content as a string
+    string fileContent = fileContentStream.str();
+    return {1, fileContent};
 }
 
 void *connectionTransfer(void *arg){
@@ -105,93 +36,75 @@ void *connectionTransfer(void *arg){
         // handle receiving header
         char recievedMsg [BUFFER_SIZE];
         memset(recievedMsg, 0, sizeof(recievedMsg));
-        recv(arguments.socketFD, recievedMsg, BUFFER_SIZE, 0);
+        ssize_t bytesReceived;
+        bytesReceived = recv(arguments.socketFD, recievedMsg, BUFFER_SIZE, 0);
         string str(recievedMsg);
-        cout << "received header.." << str.size() << str <<" ";
+        cout << str <<" ";
+        if (bytesReceived < 0){
+            cout<<"recv() failed"<<endl;
+            continue;
+        }
 
         // parse given string into strings with delimiter " "
         regex delimiter(" ");
         sregex_token_iterator it(str.begin(), str.end(), delimiter, -1);
         sregex_token_iterator end;
         vector<string> header(it, end);
+        for(auto &h: header) {cout << h << '\n';}
 
         if(header[0] == "close" || str.empty()){
             printf("bye bye id : %d\n" , arguments.socketFD );
             close(arguments.socketFD);
-            break;
+
+            nOfActiveConnections--;
+
         }
         if(header[0] == "GET") {
-            pair<bool, string> contentStatus = getNeededFile(header[1]);
-            cout<<contentStatus.first<<endl;
+
             // handle header
+            ifstream file(header[1].substr(1, header[1].size() - 1));
+            file.seekg(0, ios::end);
+            pair<bool, string> contentStatus = fileContent(file);
             if(contentStatus.first){
                 string sent_header = "HTTP/1.1 200 OK\r\n";
                 sent_header.append("content-size: " + to_string(contentStatus.second.size()));
-                sent_header.append( " \\r\\n");
+                sent_header.append(" \\r\\n");
                 cout << "header in get in success " << sent_header << '\n';
-                write(arguments.socketFD, sent_header.c_str(), strlen(sent_header.c_str()) );
+                send(arguments.socketFD, sent_header.c_str(), sent_header.length(), 0);
             } else {
                 string send_header = "HTTP/1.1 404 Not Found\\r\\n";
-                cout << "header in get in success " << send_header << '\n';
-                cout<<send_header.size()<<endl;
-                write(arguments.socketFD, send_header.c_str(), strlen(send_header.c_str()) );
-                cout<<"hello"<<endl;
+                cout << "header in error: " << send_header << '\n';
+                send(arguments.socketFD, send_header.c_str(), send_header.length(), 0);
                 continue;
             }
-//            cout << contentStatus.second << '\n';
-            //write(arguments.socketFD, contentStatus.second.c_str(), strlen(contentStatus.second.c_str()) );
-            // << contentStatus.second << '\n';
             // handle content
-            sendChuncks(arguments.socketFD, contentStatus.second);
+            send(arguments.socketFD, contentStatus.second.c_str(), contentStatus.second.length(), 0);
         }
         else if(header[0] == "POST"){
-
-            // needed to be updated
-            cout<<header.size()<<endl;
-            for(auto x : header){
-                cout<<x<<endl;
-            }
             int contentSize = stoi(header[8]);
             cout<<contentSize<<endl;
 
-
-
-            string tempcontent = "";
-
-            while (true) {
-
-                int maxNBytes = 1024;
-                char receivedContent[BUFFER_SIZE];
-                memset(receivedContent, 0, sizeof(receivedContent));
-                if(tempcontent.size() == contentSize){
-                    break;
-                }
-                ssize_t valRead = recv(arguments.socketFD, receivedContent, BUFFER_SIZE,0);
-
-                if (valRead <= 0) {
-                    cout << "File Completed";
-                    break;
-                }
-                tempcontent.append(string(receivedContent));
-                cout<<string(receivedContent).size()<<endl;
-
-                cout<<tempcontent.size()<<endl<<endl;
-                if(tempcontent.size() == contentSize){
-                    break;
-                }
+            // handle got content.
+            recievedMsg[bytesReceived] = '\0';
+            ssize_t totalBytesReceived = 0;
+            ofstream outputFile(header[1].substr(1, header[1].size() - 1), ios::binary);
+            while ((bytesReceived = recv(arguments.socketFD, recievedMsg, sizeof(recievedMsg), 0)) > 0) {
+                totalBytesReceived += bytesReceived;
+                outputFile.write(recievedMsg, bytesReceived);
+                if (totalBytesReceived >= contentSize) break;
             }
-            cout<<"hello"<<endl;
-            ofstream f_stream(header[1].substr(1 , header[1].size()-1));
-            f_stream.write( tempcontent.c_str(), tempcontent.length());
+            printf("%d total bytes received\n", (int)totalBytesReceived);
+            printf("end recieve in post request");
+
+            // response to client message.
+            string sent_header = "HTTP/1.1 200 OK\r\n";
+            send(arguments.socketFD, sent_header.c_str(), sent_header.length(), 0);
         }
-
-//        printf("The received data: %s from id : %d \n", recievedMsg , arguments.socketFD);
-
     }
 
     // need to close something??
     close(arguments.socketFD);
-    return (void *)0;
+    return nullptr;
 
 
 
@@ -243,7 +156,7 @@ int main(int argc, char* argv[]) {
     // thread for time out should be here
 
     while(true){
-        struct sockaddr_in connectedClientAddress;
+        struct sockaddr_in connectedClientAddress{};
         memset(&connectedClientAddress, 0, sizeof(connectedClientAddress));
         int clientAddrLength = 0;
         int connectionServerSockFD = accept(serverSocketFD, (struct sockaddr*)&connectedClientAddress ,reinterpret_cast<socklen_t *>(&clientAddrLength));
@@ -252,33 +165,26 @@ int main(int argc, char* argv[]) {
             printf("Failed to accept a connection request\n");
             exit(1);
         }
-        else
-        {
+        else {
             printf("Accept a request at socket ID: %d\n", connectionServerSockFD);
+            nOfActiveConnections++;
         }
         pthread_t thread ;
         Arg  arg;
         arg.socketFD = connectionServerSockFD;
-        struct timeval timeout{};
-        timeout.tv_sec = 100;
+        timeout.tv_sec = 100 / nOfActiveConnections;
         timeout.tv_usec = 0;
 
         if (setsockopt (connectionServerSockFD, SOL_SOCKET, SO_RCVTIMEO, &timeout,
                         sizeof timeout) < 0){
             printf("setsockopt failed\n");
+        }
+        if (setsockopt (connectionServerSockFD, SOL_SOCKET, SO_SNDTIMEO, &timeout,
+                        sizeof timeout) < 0){
 
+            printf("setsockopt failed\n");
 
         }
-//        struct timeval timeout2{};
-//        timeout.tv_sec = 1;
-//        timeout.tv_usec = 0;
-//
-//        if (setsockopt (connectionServerSockFD, SOL_SOCKET, SO_SNDTIMEO, &timeout2,
-//                        sizeof timeout2) < 0){
-//
-//            printf("setsockopt failed\n");
-//
-//        }
 
         pthread_create(&thread  , NULL , connectionTransfer  ,  (void *) &arg);
     }

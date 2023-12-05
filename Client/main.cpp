@@ -47,44 +47,15 @@ string post_header(string filePath , string hostName){
     return buffer;
 }
 
-pair<bool, string> getNeededFile(string &fileName){
-
-    // Open the file ** assuming that the given path started by "/"
-
-    ifstream fileStream;
-//    if(fileName.find(".jpg")){
-//
-//       unsigned char * s = readImage(fileName.substr(1, fileName.size() - 1).c_str());
-//        cout << string(reinterpret_cast<const char *>(s)) << endl;
-//        return {1 , string(reinterpret_cast<const char *>(s))};
-//    }else{
-    fileStream.open( fileName );
-
-
-    // Check if the file is open successfully
-    if(!fileStream.is_open()) return {false, ""};
-
-    // Read the entire content of the file into a string
-    stringstream buffer;
-    buffer << fileStream.rdbuf();
-    string fileContent = buffer.str();
-
-    // close the file
-    fileStream.close();
-
-    // return success
-    return {true, fileContent};
-}
-
-void sendChuncks(int socket, string &s) {
-    int maxNBytes = 500;
-    const char *beginner = s.c_str();
-    int i=0;
-    while(i < s.length())
-    {
-        write(socket, beginner + i,min(maxNBytes, (int)s.length() - i+1));
-        i+=500;
-    }
+pair<bool, string> fileContent(ifstream &file) {
+    if(!file.is_open()) return {0, ""};
+    ostringstream fileContentStream;
+    file.seekg(0, ios::beg);
+    // Read the entire file into the stream
+    fileContentStream << file.rdbuf();
+    // Get the content as a string
+    string fileContent = fileContentStream.str();
+    return {1, fileContent};
 }
 
 
@@ -122,102 +93,83 @@ int main(int argc, char* argv[]) {
     }
     string req;
     ifstream f;
+
+    // get requests from file.
     vector<string> requests;
     f.open("request.txt");
     while(getline(f, req))
         requests.push_back(req);
     cout<<requests.size()<<endl;
-    for(auto s : requests){
+    // for(auto &s : requests)
+    for(int i = 0; i < requests.size(); ++i){
+        auto &s = requests[i];
         vector<string> command = parser(s);
 
-        if(command[0] ==  "client_get" ){
+        if(command[0] ==  "client_get"){
             string send_header = get_header(command[1]);
             send(clientSockFD, send_header.c_str(), strlen(send_header.c_str()), 0);
 
             // handle receiving header
             char receivedMsg[BUFFER_SIZE];
             memset(receivedMsg, 0, sizeof(receivedMsg));
-            ssize_t numBytesRcvd = recv(clientSockFD, receivedMsg, BUFFER_SIZE,0);
-            if (numBytesRcvd < 0){
+            ssize_t bytesReceived;
+            bytesReceived = recv(clientSockFD, receivedMsg, BUFFER_SIZE,0);
+            if (bytesReceived < 0){
                 cout<<"recv() failed"<<endl;
+                continue;
             }
-
             string str(receivedMsg);
             cout << "received header.." << str <<endl;
             vector<string> receivedHeader = parser(str);
-            //for(auto x: receivedHeader) { cout << x << "\n"; }
-            //..
             if(receivedHeader[1] != "200") continue;
             int contentSize = stoi(receivedHeader[3]);
-            cout<<contentSize<<endl;
 
+            printf("before while loop\n");
 
-            string tempcontent = "";
-
-            while (true) {
-
-                int maxNBytes = 1024;
-                char receivedContent[maxNBytes];
-                memset(receivedContent, 0, sizeof(receivedContent));
-                if(tempcontent.size() == contentSize){
-                    break;
-                }
-                ssize_t valRead = read(clientSockFD, receivedContent, maxNBytes);
-
-                if (valRead <= 0) {
-                    cout << "File Completed";
-                    break;
-                }
-                tempcontent.append(string(receivedContent));
-//                cout<<string(receivedContent).size()<<endl;
-                //cout<<tempcontent<<endl<<endl<<endl;
-                cout<<tempcontent.size()<<endl<<endl;
-                if(tempcontent.size() == contentSize){
-                    break;
-                }
+            // handle got content.
+            receivedMsg[bytesReceived] = '\0';
+            ssize_t totalBytesReceived = 0;
+            ofstream outputFile(command[1], ios::binary);
+            while ((bytesReceived = recv(clientSockFD, receivedMsg, sizeof(receivedMsg), 0)) > 0) {
+                totalBytesReceived += bytesReceived;
+                outputFile.write(receivedMsg, bytesReceived);
+                if (totalBytesReceived >= contentSize) break;
             }
-            cout<<"hello"<<endl;
-            ofstream f_stream(command[1]);
-            f_stream.write(tempcontent.c_str(), tempcontent.length());
-
-
+            printf("%d total bytes received\n", (int)totalBytesReceived);
+            printf("end recieve in get request");
         }
         else if(command[0] ==  "client_post"){
 
             // handle the header of post http request
-            string send_header = post_header(command[1] , command[2]);
-            cout<<"hellooooo"<<endl;
-            pair<bool, string> contentStatus = getNeededFile(command[1]);
+            string send_header = post_header(command[1], command[2]);
+            ifstream file(command[1]);
+            file.seekg(0, ios::end);
+            pair<bool, string> contentStatus = fileContent(file);
+
             //send(clientSockFD, send_header.c_str(), strlen(send_header.c_str()), 0);
             if(contentStatus.first){
-
                 send_header.append("content-size: " + to_string(contentStatus.second.size()));
                 send_header.append( " \\r\\n");
-                cout << "header in get in success " << send_header << '\n';
-                write(clientSockFD, send_header.c_str(), strlen(send_header.c_str()) );
+                printf("header in get in success %d: %s\n", i, send_header.c_str());
+                send(clientSockFD, send_header.c_str(), send_header.length(), 0);
             } else {
-                cout << "file not founded"  << '\n';
+                cout << "respond to request command "<< i << ": file not founded"  << '\n';
                 continue;
             }
             // send the content of the file
-            cout << contentStatus.second << '\n';
-            sendChuncks(clientSockFD, contentStatus.second);
+            send(clientSockFD, contentStatus.second.c_str(), contentStatus.second.length(), 0);
+
+            // receive response of post message.
+            char response[BUFFER_SIZE];
+            ssize_t bytesReceived = recv(clientSockFD, response, BUFFER_SIZE,0);
+            if (bytesReceived < 0){
+                cout<<"recv() failed"<<endl;
+                continue;
+            }
+            printf("respond to HTTP request %d: %s", i, response);
+
         }
 
     }
     return 0;
 }
-/*
- * client_post readed.txt mohamed
- * client_post index.html abdoo
- * */
-    // handle got content.
-//            char receivedContent[contentSize];
-//            memset(receivedContent, 0, sizeof(receivedContent));
-////            cout << "before receive\n";
-//            recv(clientSockFD, receivedContent, contentSize, 0);
-////            cout << "after receive\n";
-//            string content(receivedContent);
-////            cout << "printed content-size: " << content.size() << '\n';
-////            cout << "received content :\n" << content << '\n';
-//            printf("%s", content.c_str());
