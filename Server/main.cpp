@@ -16,8 +16,10 @@ struct Arg {
     int socketFD;
 };
 
+// time out handling variables.
 struct timeval timeout{};
 int nOfActiveConnections = 0;
+pthread_mutex_t mutexHolder = PTHREAD_MUTEX_INITIALIZER;
 
 pair<bool, string> fileContent(ifstream &file) {
     if(!file.is_open()) return {0, ""};
@@ -30,18 +32,42 @@ pair<bool, string> fileContent(ifstream &file) {
     return {1, fileContent};
 }
 
+void updateTimeOut() {
+    timeout.tv_sec = 60;
+    timeout.tv_sec /= nOfActiveConnections;
+    timeout.tv_sec = max(10, (int)timeout.tv_sec);
+}
+
+
 void *connectionTransfer(void *arg){
     Arg arguments = *(Arg *) arg;
     while(true){
+
+        fd_set read_fds;
+        FD_ZERO(&read_fds);
+        FD_SET(arguments.socketFD, &read_fds);
+        int select_result = select(arguments.socketFD + 1, &read_fds, NULL, NULL, &timeout);
+
+        if(select_result == 0) {
+            printf("bye bye id : %d\n" , arguments.socketFD );
+            close(arguments.socketFD);
+            pthread_mutex_lock(&mutexHolder);
+            nOfActiveConnections--;
+            updateTimeOut();
+            pthread_mutex_unlock(&mutexHolder);
+            return nullptr;
+        }
+
         // handle receiving header
         char recievedMsg [BUFFER_SIZE];
         memset(recievedMsg, 0, sizeof(recievedMsg));
         ssize_t bytesReceived;
         bytesReceived = recv(arguments.socketFD, recievedMsg, BUFFER_SIZE, 0);
+
         string str(recievedMsg);
         cout << str <<" ";
         if (bytesReceived < 0){
-            cout<<"recv() failed"<<endl;
+            printf("no header received in socketFD %d", arguments.socketFD);
             continue;
         }
 
@@ -55,9 +81,11 @@ void *connectionTransfer(void *arg){
         if(header[0] == "close" || str.empty()){
             printf("bye bye id : %d\n" , arguments.socketFD );
             close(arguments.socketFD);
-
+            pthread_mutex_lock(&mutexHolder);
             nOfActiveConnections--;
-
+            updateTimeOut();
+            pthread_mutex_unlock(&mutexHolder);
+            return nullptr;
         }
         if(header[0] == "GET") {
 
@@ -105,11 +133,8 @@ void *connectionTransfer(void *arg){
     // need to close something??
     close(arguments.socketFD);
     return nullptr;
-
-
-
-
 }
+
 
 int main(int argc, char* argv[]) {
     int port_number = DEFAULT_PORT;
@@ -125,10 +150,14 @@ int main(int argc, char* argv[]) {
     if (serverSocketFD != -1)
     {
         printf("Server Socket ID: %d\n", serverSocketFD);
-    }
-    else
-    {
-        printf("Failed to create a socket.\n"); exit(1);
+        /*
+         * initialization of timeout variables.
+         * */
+        timeout.tv_sec = 20;
+        timeout.tv_usec = 0;
+    } else {
+        printf("Failed to create a socket.\n");
+        exit(1);
     }
     //2. bind this socket to a specific port number
     struct sockaddr_in serverAddress{};
@@ -147,7 +176,7 @@ int main(int argc, char* argv[]) {
     }
     //3. listen the connection
     int max_queue_size = 10;
-    int listen_socket = listen(serverSocketFD , max_queue_size );
+    int listen_socket = listen(serverSocketFD , max_queue_size);
     if(listen_socket != 0){
         printf("failed\n");
     }
@@ -164,27 +193,19 @@ int main(int argc, char* argv[]) {
         {
             printf("Failed to accept a connection request\n");
             exit(1);
-        }
-        else {
+        } else {
             printf("Accept a request at socket ID: %d\n", connectionServerSockFD);
+            pthread_mutex_lock(&mutexHolder);
             nOfActiveConnections++;
+            updateTimeOut();
+            pthread_mutex_unlock(&mutexHolder);
         }
-        pthread_t thread ;
-        Arg  arg;
+        pthread_t thread;
+        Arg arg;
+
+
         arg.socketFD = connectionServerSockFD;
-        timeout.tv_sec = 100;
-        timeout.tv_usec = 0;
 
-        if (setsockopt (connectionServerSockFD, SOL_SOCKET, SO_RCVTIMEO, &timeout,
-                        sizeof timeout) < 0){
-            printf("setsockopt failed\n");
-        }
-        if (setsockopt (connectionServerSockFD, SOL_SOCKET, SO_SNDTIMEO, &timeout,
-                        sizeof timeout) < 0){
-
-            printf("setsockopt failed\n");
-
-        }
 
         pthread_create(&thread  , NULL , connectionTransfer  ,  (void *) &arg);
     }
