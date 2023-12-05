@@ -58,7 +58,6 @@ pair<bool, string> fileContent(ifstream &file) {
     return {1, fileContent};
 }
 
-
 int main(int argc, char* argv[]) {
 
     fast();
@@ -100,9 +99,13 @@ int main(int argc, char* argv[]) {
     while(getline(f, req))
         requests.push_back(req);
     cout<<requests.size()<<endl;
+
     // for(auto &s : requests)
-    for(int i = 0; i < requests.size(); ++i){
-        auto &s = requests[i];
+    // for(int i = 0; i < requests.size(); ++i)
+    while(true) {
+        string s;
+        getline(cin, s);
+        //auto &s = requests[i];
         vector<string> command = parser(s);
 
         if(command[0] ==  "client_get"){
@@ -150,10 +153,16 @@ int main(int argc, char* argv[]) {
             if(contentStatus.first){
                 send_header.append("content-size: " + to_string(contentStatus.second.size()));
                 send_header.append( " \\r\\n");
-                printf("header in get in success %d: %s\n", i, send_header.c_str());
+                /*
+                 * 8yaaarrrr
+                 * */
+//                printf("header in get in success %d: %s\n", i, send_header.c_str());
                 send(clientSockFD, send_header.c_str(), send_header.length(), 0);
             } else {
-                cout << "respond to request command "<< i << ": file not founded"  << '\n';
+                /*
+                 * 8yaaarrrr
+                 * */
+//                cout << "respond to request command "<< i << ": file not founded"  << '\n';
                 continue;
             }
             // send the content of the file
@@ -166,7 +175,7 @@ int main(int argc, char* argv[]) {
                 cout<<"recv() failed"<<endl;
                 continue;
             }
-            printf("respond to HTTP request %d: %s", i, response);
+//            printf("respond to HTTP request %d: %s", i, response);
 
         }
 
