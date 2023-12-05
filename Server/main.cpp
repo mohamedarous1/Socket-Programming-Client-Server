@@ -33,8 +33,7 @@ pair<bool, string> fileContent(ifstream &file) {
 }
 
 void updateTimeOut() {
-    timeout.tv_sec = 60;
-    timeout.tv_sec /= nOfActiveConnections;
+    timeout.tv_sec = (int)(60 / max(nOfActiveConnections, 1));
     timeout.tv_sec = max(10, (int)timeout.tv_sec);
 }
 
@@ -49,7 +48,7 @@ void *connectionTransfer(void *arg){
         int select_result = select(arguments.socketFD + 1, &read_fds, NULL, NULL, &timeout);
 
         if(select_result == 0) {
-            printf("bye bye id : %d\n" , arguments.socketFD );
+            printf("client socket with id : %d is closed\n" , arguments.socketFD);
             close(arguments.socketFD);
             pthread_mutex_lock(&mutexHolder);
             nOfActiveConnections--;
@@ -65,9 +64,22 @@ void *connectionTransfer(void *arg){
         bytesReceived = recv(arguments.socketFD, recievedMsg, BUFFER_SIZE, 0);
 
         string str(recievedMsg);
-        cout << str <<" ";
+        /*
+         * need some edit.
+         * */
+        if(str.empty()){
+            printf("client socket with id : %d is closed\n" , arguments.socketFD);
+            close(arguments.socketFD);
+            pthread_mutex_lock(&mutexHolder);
+            nOfActiveConnections--;
+            updateTimeOut();
+            pthread_mutex_unlock(&mutexHolder);
+            return nullptr;
+        }
+
+        printf("got header request: \n%s\n", recievedMsg);
         if (bytesReceived < 0){
-            printf("no header received in socketFD %d", arguments.socketFD);
+            printf("no header received in socketFD %d\n", arguments.socketFD);
             continue;
         }
 
@@ -76,17 +88,8 @@ void *connectionTransfer(void *arg){
         sregex_token_iterator it(str.begin(), str.end(), delimiter, -1);
         sregex_token_iterator end;
         vector<string> header(it, end);
-        for(auto &h: header) {cout << h << '\n';}
 
-        if(header[0] == "close" || str.empty()){
-            printf("bye bye id : %d\n" , arguments.socketFD );
-            close(arguments.socketFD);
-            pthread_mutex_lock(&mutexHolder);
-            nOfActiveConnections--;
-            updateTimeOut();
-            pthread_mutex_unlock(&mutexHolder);
-            return nullptr;
-        }
+
         if(header[0] == "GET") {
 
             // handle header
@@ -97,11 +100,9 @@ void *connectionTransfer(void *arg){
                 string sent_header = "HTTP/1.1 200 OK\r\n";
                 sent_header.append("content-size: " + to_string(contentStatus.second.size()));
                 sent_header.append(" \\r\\n");
-                cout << "header in get in success " << sent_header << '\n';
                 send(arguments.socketFD, sent_header.c_str(), sent_header.length(), 0);
             } else {
                 string send_header = "HTTP/1.1 404 Not Found\\r\\n";
-                cout << "header in error: " << send_header << '\n';
                 send(arguments.socketFD, send_header.c_str(), send_header.length(), 0);
                 continue;
             }
@@ -110,7 +111,6 @@ void *connectionTransfer(void *arg){
         }
         else if(header[0] == "POST"){
             int contentSize = stoi(header[8]);
-            cout<<contentSize<<endl;
 
             // handle got content.
             recievedMsg[bytesReceived] = '\0';
@@ -121,11 +121,9 @@ void *connectionTransfer(void *arg){
                 outputFile.write(recievedMsg, bytesReceived);
                 if (totalBytesReceived >= contentSize) break;
             }
-            printf("%d total bytes received\n", (int)totalBytesReceived);
-            printf("end recieve in post request");
 
             // response to client message.
-            string sent_header = "HTTP/1.1 200 OK\r\n";
+            string sent_header = "HTTP/1.1 200 OK\\r\\n";
             send(arguments.socketFD, sent_header.c_str(), sent_header.length(), 0);
         }
     }
