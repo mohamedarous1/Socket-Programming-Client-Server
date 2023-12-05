@@ -33,10 +33,9 @@ pair<bool, string> fileContent(ifstream &file) {
 }
 
 void updateTimeOut() {
-    timeout.tv_sec = (int)(60 / max(nOfActiveConnections, 1));
+    timeout.tv_sec = (int)(20 / max(nOfActiveConnections, 1));
     timeout.tv_sec = max(10, (int)timeout.tv_sec);
 }
-
 
 void *connectionTransfer(void *arg){
     Arg arguments = *(Arg *) arg;
@@ -133,7 +132,6 @@ void *connectionTransfer(void *arg){
     return nullptr;
 }
 
-
 int main(int argc, char* argv[]) {
     int port_number = DEFAULT_PORT;
     if(argc == 2){
@@ -212,9 +210,3 @@ int main(int argc, char* argv[]) {
 
     return 0;
 }
-
-
-/*
- * get >> client req get file
- *     >> server send header res then file
- * */
