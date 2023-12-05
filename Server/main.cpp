@@ -172,7 +172,7 @@ int main(int argc, char* argv[]) {
         pthread_t thread ;
         Arg  arg;
         arg.socketFD = connectionServerSockFD;
-        timeout.tv_sec = 100 / nOfActiveConnections;
+        timeout.tv_sec = 100;
         timeout.tv_usec = 0;
 
         if (setsockopt (connectionServerSockFD, SOL_SOCKET, SO_RCVTIMEO, &timeout,
